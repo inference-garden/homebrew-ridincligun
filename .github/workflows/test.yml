@@ -5,46 +5,30 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Mirrors the canonical `brew tap-new` workflow. The full build/audit/test
-# (`--only-formulae`) runs on pull_request; pushes run tap-syntax only.
+# Solo tap: build, test, and audit the formula directly on every push.
+# (No PR needed; test-bot's PR-centric flow doesn't fit a single-formula tap.)
 # Supply-chain note: actions are pinned to major-version tags; hardening
 # option is to pin each `uses:` to a full commit SHA.
 
 jobs:
-  test-bot:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest]
-    runs-on: ${{ matrix.os }}
+  formula:
+    runs-on: macos-latest
     steps:
       - name: Set up Homebrew
-        id: set-up-homebrew
         uses: Homebrew/actions/setup-homebrew@master
 
-      - name: Cache Homebrew Bundler RubyGems
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.set-up-homebrew.outputs.gems-path }}
-          key: ${{ matrix.os }}-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
-          restore-keys: ${{ matrix.os }}-rubygems-
+      - name: Tap this repository
+        run: brew tap inference-garden/ridincligun
 
-      - name: Install Homebrew Bundler RubyGems
-        run: brew install-bundler-gems
+      - name: Install from source (builds pydantic-core / jiter via Rust)
+        run: brew install --build-from-source --verbose inference-garden/ridincligun/ridincligun
 
-      - run: brew test-bot --only-cleanup-before
+      - name: Formula test (ridincligun --version)
+        run: brew test --verbose inference-garden/ridincligun/ridincligun
 
-      - run: brew test-bot --only-setup
+      - name: Version smoke check
+        run: ridincligun --version
 
-      - run: brew test-bot --only-tap-syntax
-
-      - run: brew test-bot --only-formulae
-        if: github.event_name == 'pull_request'
-
-      - name: Upload bottles as artifact
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v4
-        with:
-          name: bottles
-          path: "*.bottle.*"
-          if-no-files-found: ignore
+      - name: Audit (strict)
+        if: always()
+        run: brew audit --strict --online inference-garden/ridincligun/ridincligun
