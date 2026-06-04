@@ -4,6 +4,7 @@ Homebrew formula for ridinCLIgun [[GitHub](https://github.com/inference-garden/r
 a terminal companion that advises but never acts (macOS).
 
 ## Install
+Now finally easy to install :-)
 
 ```bash
 brew tap inference-garden/ridincligun
