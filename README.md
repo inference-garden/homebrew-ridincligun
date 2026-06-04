@@ -1,6 +1,6 @@
 # Homebrew Tap for ridinCLIgun
 
-Homebrew formula for [ridinCLIgun](https://github.com/inference-garden/ridinCLIgun) —
+Homebrew formula for ridinCLIgun [[GitHub](https://github.com/inference-garden/ridinCLIgun)] · [[Product Page](https://inference-garden.dev/en/products/ridincligun.html)] —
 a terminal companion that advises but never acts (macOS).
 
 ## Install
@@ -29,5 +29,6 @@ brew untap inference-garden/ridincligun
 
 ## Links
 
-- Project: https://github.com/inference-garden/ridinCLIgun
+- Project (GitHub): https://github.com/inference-garden/ridinCLIgun
+- Product page: https://inference-garden.dev/en/products/ridincligun.html
 - License: GPL-3.0-or-later
