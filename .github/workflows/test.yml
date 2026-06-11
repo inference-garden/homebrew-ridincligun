@@ -30,8 +30,13 @@ jobs:
       - name: Tap this repository at the workflow ref
         run: |
           brew tap inference-garden/ridincligun
-          cp "$GITHUB_WORKSPACE/Formula/ridincligun.rb" \
-            "$(brew --repository inference-garden/ridincligun)/Formula/ridincligun.rb"
+          # setup-homebrew links the checked-out repo as the tap, making both
+          # paths the same file - BSD cp fails copying a file onto itself.
+          # Sync only when the contents actually differ.
+          tap_formula="$(brew --repository inference-garden/ridincligun)/Formula/ridincligun.rb"
+          if ! cmp -s "$GITHUB_WORKSPACE/Formula/ridincligun.rb" "$tap_formula"; then
+            cp "$GITHUB_WORKSPACE/Formula/ridincligun.rb" "$tap_formula"
+          fi
 
       - name: Install from source (builds pydantic-core / jiter via Rust)
         run: brew install --build-from-source --verbose inference-garden/ridincligun/ridincligun

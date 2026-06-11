@@ -49,8 +49,10 @@ jobs:
           fi
 
           brew tap inference-garden/ridincligun
-          cp "$GITHUB_WORKSPACE/Formula/ridincligun.rb" \
-            "$(brew --repository inference-garden/ridincligun)/Formula/ridincligun.rb"
+          tap_formula="$(brew --repository inference-garden/ridincligun)/Formula/ridincligun.rb"
+          if ! cmp -s "$GITHUB_WORKSPACE/Formula/ridincligun.rb" "$tap_formula"; then
+            cp "$GITHUB_WORKSPACE/Formula/ridincligun.rb" "$tap_formula"
+          fi
 
           # Snapshot the compiler-toolchain state before the install so a
           # preinstalled rust/llvm on the runner image cannot mask a failure.
