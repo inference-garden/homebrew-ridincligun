@@ -1,0 +1,190 @@
+name: Bottle
+
+# Builds prebuilt bottles for the formula and opens a pull request that adds
+# the `bottle do` block. Run manually from the Actions tab after the formula
+# has been bumped to a new version (url + sha256 updated, any previous
+# `bottle do` block REMOVED).
+#
+# Flow:
+#   1. build matrix - one job per supported macOS/architecture, each builds
+#      the formula from source (`--build-bottle`) and produces a bottle
+#   2. publish job - merges the CI-generated checksums into the formula,
+#      creates the GitHub Release `v<version>`, uploads the bottle files as
+#      release assets, then opens a PR for the maintainer to review and merge
+#
+# Invariants:
+#   - bottle checksums are CI-generated end to end; never hand-edited
+#   - release assets are uploaded BEFORE the formula PR exists, so a merged
+#     formula never references missing bottles
+#   - CI commits are authored as github-actions[bot], so machine-made commits
+#     stay distinguishable from maintainer commits
+#   - all actions are pinned to full commit SHAs (supply-chain hardening)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the release, upload assets, push the PR branch
+  pull-requests: write # open the bottle PR
+
+concurrency:
+  group: bottle
+  cancel-in-progress: false
+
+env:
+  FORMULA: inference-garden/ridincligun/ridincligun
+
+jobs:
+  build:
+    name: Build bottle (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-14 # arm64_sonoma
+          - macos-15 # arm64_sequoia
+          - macos-26 # arm64_tahoe
+          - macos-15-intel # sequoia (x86_64)
+          - macos-26-intel # tahoe (x86_64)
+    runs-on: ${{ matrix.os }}
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Check out tap
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@2ebcf16054461267868620b1414507f3ccc765c1 # 2026-06-05
+
+      - name: Read formula version, refuse stale bottle blocks
+        id: meta
+        run: |
+          version="$(sed -n 's|.*/archive/refs/tags/v\([0-9][0-9.]*\)\.tar\.gz.*|\1|p' Formula/ridincligun.rb | head -1)"
+          if [ -z "$version" ]; then
+            echo "Could not read the version from Formula/ridincligun.rb" >&2
+            exit 1
+          fi
+          if grep -q "bottle do" Formula/ridincligun.rb; then
+            echo "Formula already contains a bottle block." >&2
+            echo "Remove it as part of the version bump before bottling (see RELEASING.md)." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Bottling ridincligun $version"
+
+      - name: Tap this repository at the workflow ref
+        run: |
+          brew tap inference-garden/ridincligun
+          cp "$GITHUB_WORKSPACE/Formula/ridincligun.rb" \
+            "$(brew --repository inference-garden/ridincligun)/Formula/ridincligun.rb"
+
+      - name: Build from source for bottling
+        run: brew install --build-bottle --verbose "$FORMULA"
+
+      - name: Test the built formula
+        run: |
+          brew test --verbose "$FORMULA"
+          ridincligun --version
+
+      - name: Bottle
+        run: |
+          brew bottle --json \
+            --root-url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${{ steps.meta.outputs.version }}" \
+            "$FORMULA"
+          # `brew bottle` writes the archive under its *local* name (double
+          # dash). The served asset must use the canonical `filename` from the
+          # bottle JSON, or `brew install` will request a URL that 404s.
+          json_file="$(ls ./*.bottle.json)"
+          local_name="$(jq -r '[.[].bottle.tags[]][0].local_filename' "$json_file")"
+          served_name="$(jq -r '[.[].bottle.tags[]][0].filename' "$json_file")"
+          if [ "$local_name" != "$served_name" ]; then
+            mv "$local_name" "$served_name"
+          fi
+          ls -lh ./*.bottle.tar.gz
+
+      - name: Upload bottle artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bottle-${{ matrix.os }}
+          path: |
+            *.bottle.tar.gz
+            *.bottle.json
+          if-no-files-found: error
+
+  publish:
+    name: Release assets + bottle PR
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - name: Check out tap
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@2ebcf16054461267868620b1414507f3ccc765c1 # 2026-06-05
+
+      - name: Download bottles
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: bottles
+          merge-multiple: true
+
+      - name: Merge CI-generated checksums into the formula
+        run: |
+          brew tap inference-garden/ridincligun
+          tap_formula="$(brew --repository inference-garden/ridincligun)/Formula/ridincligun.rb"
+          cp Formula/ridincligun.rb "$tap_formula"
+          brew bottle --merge --write --no-commit bottles/*.bottle.json
+          cp "$tap_formula" Formula/ridincligun.rb
+
+          # Sanity: the block exists and carries one sha256 per built bottle
+          grep -q "bottle do" Formula/ridincligun.rb
+          n_json="$(ls bottles/*.bottle.json | wc -l | tr -d ' ')"
+          n_sha="$(awk '/bottle do/,/^  end/' Formula/ridincligun.rb | grep -c sha256)"
+          if [ "$n_json" != "$n_sha" ]; then
+            echo "Expected $n_json sha256 lines in the bottle block, found $n_sha" >&2
+            exit 1
+          fi
+          brew style inference-garden/ridincligun
+          git diff -- Formula/ridincligun.rb
+
+      - name: Create release and upload bottles
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          test -n "$VERSION"
+          tag="v${VERSION}"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" \
+              --title "ridincligun ${VERSION} bottles" \
+              --notes "Prebuilt Homebrew bottles for ridincligun ${VERSION}. Downloaded automatically by \`brew install\`; not for manual installation."
+          fi
+          gh release upload "$tag" bottles/*.bottle.tar.gz --clobber
+
+      - name: Open pull request with the bottle block
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch="bottles-v${VERSION}"
+          git checkout -b "$branch"
+          git add Formula/ridincligun.rb
+          git commit \
+            -m "Add bottles for ${VERSION}" \
+            -m "Prebuilt bottles for the supported macOS/architecture matrix. Checksums generated and merged by the bottle workflow; release assets uploaded before this change so the formula never references missing bottles." \
+            -m "Coded with LLM-Assistance"
+          git push origin "$branch"
+          {
+            printf 'Adds the `bottle do` block for ridincligun %s.\n\n' "$VERSION"
+            printf -- '- Bottles built and checksummed by CI: %s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+            printf -- '- Release assets: %s/%s/releases/tag/v%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$VERSION"
+            printf -- '- Checksums are CI-generated; do not hand-edit.\n\n'
+            printf 'After merging, the pour-test workflow verifies that a clean runner installs by pouring the bottle.\n'
+          } > /tmp/bottle_pr_body.md
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Add bottles for ${VERSION}" \
+            --body-file /tmp/bottle_pr_body.md

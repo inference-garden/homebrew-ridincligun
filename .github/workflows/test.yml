@@ -1,24 +1,37 @@
-name: CI
+name: From-source build
+
+# The from-source path is the fallback for macOS/architecture combinations
+# without a bottle - it must keep working. Pull requests (including the
+# CI-generated bottle PRs) build it fresh; the weekly run catches upstream
+# drift (new transitive deps, python bumps). There is no plain `push`
+# trigger: pushes to main are covered by the pour-test workflow, and the
+# bottle workflow already builds from source on five runners per release.
+# Supply-chain: actions pinned to full commit SHAs.
 
 on:
-  push:
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "23 6 * * 4" # weekly, Thursday morning UTC
 
-# Solo tap: build, test, and audit the formula directly on every push.
-# (No PR needed; test-bot's PR-centric flow doesn't fit a single-formula tap.)
-# Supply-chain note: actions are pinned to major-version tags; hardening
-# option is to pin each `uses:` to a full commit SHA.
+permissions:
+  contents: read
 
 jobs:
   formula:
     runs-on: macos-latest
     steps:
-      - name: Set up Homebrew
-        uses: Homebrew/actions/setup-homebrew@main
+      - name: Check out tap
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - name: Tap this repository
-        run: brew tap inference-garden/ridincligun
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@2ebcf16054461267868620b1414507f3ccc765c1 # 2026-06-05
+
+      - name: Tap this repository at the workflow ref
+        run: |
+          brew tap inference-garden/ridincligun
+          cp "$GITHUB_WORKSPACE/Formula/ridincligun.rb" \
+            "$(brew --repository inference-garden/ridincligun)/Formula/ridincligun.rb"
 
       - name: Install from source (builds pydantic-core / jiter via Rust)
         run: brew install --build-from-source --verbose inference-garden/ridincligun/ridincligun
