@@ -99,21 +99,21 @@ jobs:
           # `brew bottle` writes the archive under its *local* name (double
           # dash). The served asset must use the canonical `filename` from the
           # bottle JSON, or `brew install` will request a URL that 404s.
-          json_file="$(ls ./*.bottle.json)"
+          json_file="$(ls ./*.bottle*.json)"
           local_name="$(jq -r '[.[].bottle.tags[]][0].local_filename' "$json_file")"
           served_name="$(jq -r '[.[].bottle.tags[]][0].filename' "$json_file")"
           if [ "$local_name" != "$served_name" ]; then
             mv "$local_name" "$served_name"
           fi
-          ls -lh ./*.bottle.tar.gz
+          ls -lh ./*.bottle*.tar.gz
 
       - name: Upload bottle artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bottle-${{ matrix.os }}
           path: |
-            *.bottle.tar.gz
-            *.bottle.json
+            *.bottle*.tar.gz
+            *.bottle*.json
           if-no-files-found: error
 
   publish:
@@ -140,14 +140,14 @@ jobs:
           if ! cmp -s Formula/ridincligun.rb "$tap_formula"; then
             cp Formula/ridincligun.rb "$tap_formula"
           fi
-          brew bottle --merge --write --no-commit bottles/*.bottle.json
+          brew bottle --merge --write --no-commit bottles/*.bottle*.json
           if ! cmp -s "$tap_formula" Formula/ridincligun.rb; then
             cp "$tap_formula" Formula/ridincligun.rb
           fi
 
           # Sanity: the block exists and carries one sha256 per built bottle
           grep -q "bottle do" Formula/ridincligun.rb
-          n_json="$(ls bottles/*.bottle.json | wc -l | tr -d ' ')"
+          n_json="$(ls bottles/*.bottle*.json | wc -l | tr -d ' ')"
           n_sha="$(awk '/bottle do/,/^  end/' Formula/ridincligun.rb | grep -c sha256)"
           if [ "$n_json" != "$n_sha" ]; then
             echo "Expected $n_json sha256 lines in the bottle block, found $n_sha" >&2
@@ -168,7 +168,7 @@ jobs:
               --title "ridincligun ${VERSION} bottles" \
               --notes "Prebuilt Homebrew bottles for ridincligun ${VERSION}. Downloaded automatically by \`brew install\`; not for manual installation."
           fi
-          gh release upload "$tag" bottles/*.bottle.tar.gz --clobber
+          gh release upload "$tag" bottles/*.bottle*.tar.gz --clobber
 
       - name: Open pull request with the bottle block
         env:
