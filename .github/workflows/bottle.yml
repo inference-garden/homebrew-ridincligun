@@ -41,11 +41,11 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          # TEMP: matrix reduced to one platform while debugging the build
-          # failure. Restore the full list before merging any bottle PR:
-          # macos-14 (arm64_sonoma), macos-15 (arm64_sequoia),
-          # macos-15-intel (sequoia), macos-26-intel (tahoe).
+          - macos-14 # arm64_sonoma
+          - macos-15 # arm64_sequoia
           - macos-26 # arm64_tahoe
+          - macos-15-intel # sequoia (x86_64)
+          - macos-26-intel # tahoe (x86_64)
     runs-on: ${{ matrix.os }}
     outputs:
       version: ${{ steps.meta.outputs.version }}
@@ -132,7 +132,9 @@ jobs:
           # `brew bottle` writes the archive under its *local* name (double
           # dash). The served asset must use the canonical `filename` from the
           # bottle JSON, or `brew install` will request a URL that 404s.
-          json_file="$(ls ./*.bottle*.json)"
+          json_files=(./*.bottle*.json)
+          json_file="${json_files[0]}"
+          test -f "$json_file"
           local_name="$(jq -r '[.[].bottle.tags[]][0].local_filename' "$json_file")"
           served_name="$(jq -r '[.[].bottle.tags[]][0].filename' "$json_file")"
           if [ "$local_name" != "$served_name" ]; then
@@ -186,7 +188,10 @@ jobs:
             echo "Expected $n_json sha256 lines in the bottle block, found $n_sha" >&2
             exit 1
           fi
-          brew style inference-garden/ridincligun
+          # Style-check the merged formula only - tap-wide style also lints
+          # the workflow files with whatever checks current brew ships, which
+          # is out of scope for validating the checksum merge.
+          brew style "$FORMULA"
           git diff -- Formula/ridincligun.rb
 
       - name: Create release and upload bottles
@@ -220,7 +225,7 @@ jobs:
           # CI-owned ephemeral branch: re-runs must be able to replace it
           git push --force origin "$branch"
           {
-            printf 'Adds the `bottle do` block for ridincligun %s.\n\n' "$VERSION"
+            printf 'Adds the bottle definitions for ridincligun %s.\n\n' "$VERSION"
             printf -- '- Bottles built and checksummed by CI: %s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
             printf -- '- Release assets: %s/%s/releases/tag/v%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$VERSION"
             printf -- '- Checksums are CI-generated; do not hand-edit.\n\n'
