@@ -12,10 +12,10 @@ class Ridincligun < Formula
   license "GPL-3.0-or-later"
   head "https://github.com/inference-garden/ridinCLIgun.git", branch: "master"
 
-  depends_on "python@3.13"
   # pydantic-core and jiter (pulled in by the bundled AI SDKs) compile from a
   # Rust sdist when built from source.
   depends_on "rust" => :build
+  depends_on "python@3.13"
 
   # --- Python resources (runtime + bundled AI providers) --------------------
   # Generated from the v0.4.5 release installed with all three AI extras

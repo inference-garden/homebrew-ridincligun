@@ -103,6 +103,10 @@ jobs:
 
           brew tap inference-garden/ridincligun
 
+          # Tapping a repository appears to record trust for it - remove any
+          # trust first so the negative assertion is deterministic.
+          HOMEBREW_REQUIRE_TAP_TRUST=1 brew untrust inference-garden/ridincligun || true
+
           # Without trust, loading formulae from a third-party tap must fail
           if HOMEBREW_REQUIRE_TAP_TRUST=1 brew info inference-garden/ridincligun/ridincligun >/dev/null 2>&1; then
             echo "Expected the untrusted tap formula to be refused" >&2
