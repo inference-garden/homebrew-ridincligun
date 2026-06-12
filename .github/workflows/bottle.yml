@@ -23,9 +23,11 @@ name: Bottle
 on:
   workflow_dispatch:
 
+# Least privilege: the build jobs run third-party package build scripts
+# (the formula's sdists), so their token is read-only. Only the publish
+# job gets write access, declared at job level below.
 permissions:
-  contents: write # create the release, upload assets, push the PR branch
-  pull-requests: write # open the bottle PR
+  contents: read
 
 concurrency:
   group: bottle
@@ -155,6 +157,9 @@ jobs:
     name: Release assets + bottle PR
     needs: build
     runs-on: macos-latest
+    permissions:
+      contents: write # create the release, upload assets, push the PR branch
+      pull-requests: write # open the bottle PR
     steps:
       - name: Check out tap
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -226,8 +231,13 @@ jobs:
             -m "Add bottles for ${VERSION}" \
             -m "Prebuilt bottles for the supported macOS/architecture matrix. Checksums generated and merged by the bottle workflow; release assets uploaded before this change so the formula never references missing bottles." \
             -m "Coded with LLM-Assistance"
-          # CI-owned ephemeral branch: re-runs must be able to replace it
-          git push --force origin "$branch"
+          # CI-owned ephemeral branch: re-runs must be able to replace it.
+          # Authenticate explicitly - independent of the checkout action's
+          # credential-persistence behavior, which changed across versions.
+          # The token is the masked, run-scoped GITHUB_TOKEN.
+          git push --force \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:refs/heads/${branch}"
           {
             printf 'Adds the bottle definitions for ridincligun %s.\n\n' "$VERSION"
             printf -- '- Bottles built and checksummed by CI: %s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
