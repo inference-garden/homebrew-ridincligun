@@ -41,11 +41,11 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - macos-14 # arm64_sonoma
-          - macos-15 # arm64_sequoia
+          # TEMP: matrix reduced to one platform while debugging the build
+          # failure. Restore the full list before merging any bottle PR:
+          # macos-14 (arm64_sonoma), macos-15 (arm64_sequoia),
+          # macos-15-intel (sequoia), macos-26-intel (tahoe).
           - macos-26 # arm64_tahoe
-          - macos-15-intel # sequoia (x86_64)
-          - macos-26-intel # tahoe (x86_64)
     runs-on: ${{ matrix.os }}
     outputs:
       version: ${{ steps.meta.outputs.version }}
@@ -86,13 +86,27 @@ jobs:
             cp "$GITHUB_WORKSPACE/Formula/ridincligun.rb" "$tap_formula"
           fi
 
+      - name: Show resolved dependencies (debug)
+        run: |
+          brew info "$FORMULA" || true
+          brew deps --tree --include-build "$FORMULA" || true
+          brew list --versions | grep -iE 'python|rust|llvm' || true
+
       - name: Build from source for bottling
+        # The sandboxed build child re-evaluates tap trust with its own HOME,
+        # where the trust recorded by the outer process is invisible - the
+        # build then dies before producing any output (seen with brew 6.0.1
+        # main). Publisher-side builds of our own tap don't need the consumer
+        # gate; the pour-test workflow still tests the user-facing trust flow.
+        env:
+          HOMEBREW_NO_REQUIRE_TAP_TRUST: "1"
         run: brew install --build-bottle --verbose "$FORMULA"
 
       - name: Dump Homebrew build logs on failure
         if: failure()
         run: |
           brew config || true
+          ls -la "$HOME/Library/Logs/Homebrew/" || true
           shopt -s nullglob
           files=("$HOME"/Library/Logs/Homebrew/ridincligun/*)
           if [ ${#files[@]} -eq 0 ]; then
@@ -104,6 +118,8 @@ jobs:
           done
 
       - name: Test the built formula
+        env:
+          HOMEBREW_NO_REQUIRE_TAP_TRUST: "1" # brew test also sandboxes
         run: |
           brew test --verbose "$FORMULA"
           ridincligun --version
@@ -201,7 +217,8 @@ jobs:
             -m "Add bottles for ${VERSION}" \
             -m "Prebuilt bottles for the supported macOS/architecture matrix. Checksums generated and merged by the bottle workflow; release assets uploaded before this change so the formula never references missing bottles." \
             -m "Coded with LLM-Assistance"
-          git push origin "$branch"
+          # CI-owned ephemeral branch: re-runs must be able to replace it
+          git push --force origin "$branch"
           {
             printf 'Adds the `bottle do` block for ridincligun %s.\n\n' "$VERSION"
             printf -- '- Bottles built and checksummed by CI: %s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
@@ -209,8 +226,12 @@ jobs:
             printf -- '- Checksums are CI-generated; do not hand-edit.\n\n'
             printf 'After merging, the pour-test workflow verifies that a clean runner installs by pouring the bottle.\n'
           } > /tmp/bottle_pr_body.md
-          gh pr create \
-            --base main \
-            --head "$branch" \
-            --title "Add bottles for ${VERSION}" \
-            --body-file /tmp/bottle_pr_body.md
+          if [ "$(gh pr list --head "$branch" --state open --json number --jq length)" != "0" ]; then
+            echo "::notice::Open PR for $branch already exists - force-push updated it."
+          else
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "Add bottles for ${VERSION}" \
+              --body-file /tmp/bottle_pr_body.md
+          fi
