@@ -74,7 +74,10 @@ jobs:
 
       - name: Tap this repository at the workflow ref
         run: |
+          brew --version
           brew tap inference-garden/ridincligun
+          brew trust inference-garden/ridincligun \
+            || echo "::notice::brew trust exited nonzero (tap may already be trusted)"
           # setup-homebrew links the checked-out repo as the tap, making both
           # paths the same file - BSD cp fails copying a file onto itself.
           # Sync only when the contents actually differ.
@@ -85,6 +88,20 @@ jobs:
 
       - name: Build from source for bottling
         run: brew install --build-bottle --verbose "$FORMULA"
+
+      - name: Dump Homebrew build logs on failure
+        if: failure()
+        run: |
+          brew config || true
+          shopt -s nullglob
+          files=("$HOME"/Library/Logs/Homebrew/ridincligun/*)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No Homebrew build logs found under ~/Library/Logs/Homebrew/ridincligun/"
+          fi
+          for f in "${files[@]}"; do
+            echo "===== $f ====="
+            cat "$f"
+          done
 
       - name: Test the built formula
         run: |
