@@ -46,8 +46,13 @@ jobs:
           - macos-14 # arm64_sonoma
           - macos-15 # arm64_sequoia
           - macos-26 # arm64_tahoe
-          - macos-15-intel # sequoia (x86_64)
-          - macos-26-intel # tahoe (x86_64)
+          # Intel dropped for v0.4.7: GitHub Intel runner images hit a
+          # python@3.13 vs python@3.14 link collision (rust -> llvm -> python@3.14)
+          # that strips pip and breaks the venv bootstrap. arm64 is unaffected;
+          # Intel users fall back to the source build. Restore once upstream fixes
+          # the runner image (Intel macOS runners are mid-deprecation).
+          # - macos-15-intel # sequoia (x86_64)
+          # - macos-26-intel # tahoe (x86_64)
     runs-on: ${{ matrix.os }}
     outputs:
       version: ${{ steps.meta.outputs.version }}
