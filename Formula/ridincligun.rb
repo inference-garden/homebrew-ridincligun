@@ -12,6 +12,14 @@ class Ridincligun < Formula
   license "GPL-3.0-or-later"
   head "https://github.com/inference-garden/ridinCLIgun.git", branch: "master"
 
+  bottle do
+    root_url "https://github.com/inference-garden/homebrew-ridincligun/releases/download/v0.4.7"
+    rebuild 1
+    sha256 cellar: :any, arm64_tahoe:   "1f71af303034bc6d57d413d44a58fb82f736777b9b7fc5f8db72f75ace891531"
+    sha256 cellar: :any, arm64_sequoia: "a7733b3e1ac227b107da049fe0cf61a2f2375431a0b6168e49c51afba1b43544"
+    sha256 cellar: :any, arm64_sonoma:  "59adee487c45ac50c1836f5a1ca4d5daf54cfb12360e696eae4d29405c9eb918"
+  end
+
   # pydantic-core and jiter (pulled in by the bundled AI SDKs) compile from a
   # Rust sdist when built from source.
   depends_on "rust" => :build
