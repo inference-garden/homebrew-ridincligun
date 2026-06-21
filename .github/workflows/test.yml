@@ -26,6 +26,8 @@ jobs:
 
       - name: Set up Homebrew
         uses: Homebrew/actions/setup-homebrew@2ebcf16054461267868620b1414507f3ccc765c1 # 2026-06-05
+        with:
+          stable: true # latest stable brew tag, not dev-main (auto = dev-main for a tap repo)
 
       - name: Tap this repository at the workflow ref
         run: |
